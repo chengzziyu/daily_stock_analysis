@@ -408,6 +408,10 @@ def run_full_analysis(
                     # 可选：将文档链接也推送到群里
                     if not args.no_notify:
                         pipeline.notifier.send(f"[{now.strftime('%Y-%m-%d %H:%M')}] 复盘文档创建成功: {doc_url}")
+                        # 在执行股票分析后，加一段测试代码
+                        test_msg = "✅ 股票分析测试消息！"
+                        pipeline.notifier.send(test_msg)
+                        logger.info(f"测试消息已发送: {test_msg}")
 
         except Exception as e:
             logger.error(f"飞书文档生成失败: {e}")
