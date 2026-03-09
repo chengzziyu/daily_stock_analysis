@@ -23,25 +23,47 @@ A股自选股智能分析系统 - 主调度程序
 """
 import os
 import requests
+import json
+from src.config import setup_env
+setup_env()
 
-# 读取环境变量中的飞书 Webhook
-webhook = os.getenv("FEISHU_WEBHOOK")
-if webhook:
-    print(f"✅ 检测到飞书 Webhook，发送测试消息...")
-    # 飞书自定义机器人要求的 JSON 格式
+# ====================== 飞书推送核心函数 ======================
+def send_feishu_notification(content, webhook=None):
+    """
+    发送消息到飞书群
+    :param content: 要发送的文本内容
+    :param webhook: 飞书机器人webhook地址（优先读取环境变量）
+    """
+    # 优先从环境变量读取webhook
+    feishu_webhook = webhook or os.getenv("FEISHU_WEBHOOK")
+    if not feishu_webhook:
+        print("⚠️ 飞书Webhook未配置，跳过推送")
+        return
+    
+    # 飞书自定义机器人消息格式
+    headers = {"Content-Type": "application/json; charset=utf-8"}
     data = {
         "msg_type": "text",
         "content": {
-            "text": "✅ 自动化股票分析系统测试消息！\n系统已成功运行，FEISHU_WEBHOOK 配置生效！"
+            "text": content
         }
     }
-    # 发送 POST 请求
-    response = requests.post(webhook, json=data)
-    print(f"飞书推送结果: {response.json()}")
-
-import os
-from src.config import setup_env
-setup_env()
+    
+    try:
+        response = requests.post(
+            feishu_webhook,
+            headers=headers,
+            data=json.dumps(data),
+            timeout=10
+        )
+        response.raise_for_status()  # 抛出HTTP错误
+        result = response.json()
+        if result.get("StatusCode") == 0:
+            print("✅ 飞书消息推送成功！")
+        else:
+            print(f"❌ 飞书推送失败：{result}")
+    except Exception as e:
+        print(f"❌ 飞书推送异常：{str(e)}")
 
 # 代理配置 - 通过 USE_PROXY 环境变量控制，默认关闭
 # GitHub Actions 环境自动跳过代理配置
@@ -394,7 +416,7 @@ def run_full_analysis(
 
         logger.info("\n任务执行完成")
 
-        # === 新增：生成飞书云文档 ===
+        # === 新增：生成飞书云文档 + 推送分析结果到飞书群 ===
         try:
             from src.feishu_doc import FeishuDocManager
 
@@ -426,13 +448,33 @@ def run_full_analysis(
                     # 可选：将文档链接也推送到群里
                     if not args.no_notify:
                         pipeline.notifier.send(f"[{now.strftime('%Y-%m-%d %H:%M')}] 复盘文档创建成功: {doc_url}")
-                        # 在执行股票分析后，加一段测试代码
-                        test_msg = "✅ 股票分析测试消息！"
-                        pipeline.notifier.send(test_msg)
-                        logger.info(f"测试消息已发送: {test_msg}")
+                        # 核心新增：调用飞书推送函数，推送带链接的完整报告
+                        push_content = f"📊 【{now.strftime('%Y-%m-%d %H:%M')} 股票分析报告】\n复盘文档链接：{doc_url}\n✅ 系统已完成今日龙头股分析！"
+                        send_feishu_notification(push_content)
+
+            # 兜底推送：无飞书文档时直接推送分析结果
+            else:
+                if (results or market_report) and not args.no_notify:
+                    logger.info("📤 飞书文档未配置，直接推送分析结果文本...")
+                    push_content = ""
+                    if market_report:
+                        push_content += f"📈 【大盘复盘】\n{market_report[:500]}...\n\n"
+                    if results:
+                        push_content += "🚀 【龙头股分析结果】\n"
+                        for r in sorted(results, key=lambda x: x.sentiment_score, reverse=True)[:5]:
+                            push_content += f"- {r.name}({r.code}): {r.operation_advice} | 评分 {r.sentiment_score}\n"
+                    send_feishu_notification(push_content)
 
         except Exception as e:
-            logger.error(f"飞书文档生成失败: {e}")
+            logger.error(f"飞书文档生成/推送失败: {e}")
+            # 异常时仍尝试推送基础分析结果
+            if (results or market_report) and not args.no_notify:
+                push_content = f"⚠️ 飞书文档生成失败，以下是核心分析结果：\n"
+                if market_report:
+                    push_content += f"📈 大盘复盘：{market_report[:300]}...\n"
+                if results:
+                    push_content += f"🚀 核心龙头股：{[r.code for r in results[:3]]}"
+                send_feishu_notification(push_content)
 
         # === Auto backtest ===
         try:
@@ -456,6 +498,8 @@ def run_full_analysis(
 
     except Exception as e:
         logger.exception(f"分析流程执行失败: {e}")
+        # 异常时推送错误信息到飞书
+        send_feishu_notification(f"❌ 股票分析系统执行失败：{str(e)[:500]}")
 
 
 def start_api_server(host: str, port: int, config: Config) -> None:
@@ -666,13 +710,19 @@ def main() -> int:
             else:
                 logger.warning("未检测到 API Key (Gemini/OpenAI)，将仅使用模板生成报告")
 
-            run_market_review(
+            review_result = run_market_review(
                 notifier=notifier,
                 analyzer=analyzer,
                 search_service=search_service,
                 send_notification=not args.no_notify,
                 override_region=effective_region,
             )
+            
+            # 仅大盘复盘时推送结果到飞书
+            if review_result and not args.no_notify:
+                push_content = f"📊 【{datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')} 大盘复盘报告】\n{review_result[:800]}..."
+                send_feishu_notification(push_content)
+                
             return 0
 
         # 模式2: 定时任务模式
@@ -727,6 +777,7 @@ def main() -> int:
 
     except Exception as e:
         logger.exception(f"程序执行失败: {e}")
+        send_feishu_notification(f"❌ 股票分析系统主程序执行失败：{str(e)[:500]}")
         return 1
 
 
