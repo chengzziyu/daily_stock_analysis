@@ -58,6 +58,20 @@ jobs:
       
       - name: 执行股票分析
         env:
+        jobs:
+          analyze:
+            runs-on: ubuntu-latest
+            steps:
+              # （省略其他步骤）
+              - name: 执行股票分析
+                env:
+                  # 核心新增：将 GitHub 密钥映射为工具可识别的环境变量
+                  FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+                  # 若工具需要其他飞书文档配置，可留空，先保证消息推送
+                  FEISHU_APP_ID: ""
+                  FEISHU_APP_SECRET: ""
+                run: python main.py
+                
           # ==========================================
           # AI 配置
           # ==========================================
@@ -101,7 +115,7 @@ jobs:
           
           # 方式二：飞书 Webhook
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-          
+            
           # 方式三：Telegram
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
