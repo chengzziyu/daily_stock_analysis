@@ -29,13 +29,11 @@ jobs:
 
       # 第四步：执行股票分析（核心步骤，添加飞书环境变量映射）
       - name: 执行股票分析
-        # 关键：将 GitHub Secrets 映射为工具可识别的环境变量
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           FEISHU_APP_ID: ""
           FEISHU_APP_SECRET: ""
-        # 运行分析脚本，关闭 --no-notify 确保推送生效
-        run: python main.py --no-notify false
+        run: python main.py
 
       # 第五步：上传分析报告（保留原始功能）
       - name: 上传分析报告
