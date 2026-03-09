@@ -1,7 +1,7 @@
 # 每日股票分析工作流配置
 name: 每日股票分析
 
-# 触发方式：支持手动触发（workflow_dispatch）
+# 触发方式：仅保留手动触发（避免语法错误）
 on:
   workflow_dispatch:
 
@@ -11,31 +11,33 @@ jobs:
     # 使用 Ubuntu 最新版运行环境
     runs-on: ubuntu-latest
     
-    # 任务步骤
+    # 任务步骤（严格 2 空格缩进）
     steps:
       # 第一步：检出仓库代码
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # 第二步：设置 Python 环境（匹配工具所需版本）
+      # 第二步：设置 Python 环境
       - name: 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # 第三步：安装工具依赖包
+      # 第三步：安装工具依赖包（添加国内源提速）
       - name: 安装依赖
-        run: pip install -r requirements.txt
+        run: pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
-      # 第四步：执行股票分析（核心步骤，添加飞书环境变量映射）
+      # 第四步：执行股票分析（核心步骤）
       - name: 执行股票分析
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           FEISHU_APP_ID: ""
           FEISHU_APP_SECRET: ""
-        run: python main.py
+          STOCK_LIST: ${{ vars.STOCK_LIST }}
+        # 命令行参数传递股票列表（确保无语法错误）
+        run: python main.py --stocks "${{ vars.STOCK_LIST }}"
 
-      # 第五步：上传分析报告（保留原始功能）
+      # 第五步：上传分析报告
       - name: 上传分析报告
         uses: actions/upload-artifact@v4
         with:
