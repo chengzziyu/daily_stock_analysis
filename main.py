@@ -22,6 +22,24 @@ A股自选股智能分析系统 - 主调度程序
 - 买点偏好：缩量回踩 MA5/MA10 支撑
 """
 import os
+import requests
+
+# 读取环境变量中的飞书 Webhook
+webhook = os.getenv("FEISHU_WEBHOOK")
+if webhook:
+    print(f"✅ 检测到飞书 Webhook，发送测试消息...")
+    # 飞书自定义机器人要求的 JSON 格式
+    data = {
+        "msg_type": "text",
+        "content": {
+            "text": "✅ 自动化股票分析系统测试消息！\n系统已成功运行，FEISHU_WEBHOOK 配置生效！"
+        }
+    }
+    # 发送 POST 请求
+    response = requests.post(webhook, json=data)
+    print(f"飞书推送结果: {response.json()}")
+
+import os
 from src.config import setup_env
 setup_env()
 
